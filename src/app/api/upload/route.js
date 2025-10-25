@@ -1,45 +1,69 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+
+const PYTHON_API_URL = "http://localhost:8502/transcribe";
+
 
 export async function POST(request) {
   try {
-    const data = await request.formData();
-    const file = data.get("file");
+    const formData = await request.formData();
+    const file = formData.get("file");
 
     if (!file) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "No file uploaded" },
+        { status: 400 }
+      );
     }
 
-    // Validate file type (only audio)
+    // Validate file type
     if (!file.type.startsWith("audio/")) {
-      return NextResponse.json({ error: "Invalid file type" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Invalid file type. Only audio files are allowed." },
+        { status: 400 }
+      );
     }
 
-    // Create uploads folder under public if not exists
-    const uploadDir = path.join(process.cwd(), "public", "recordings");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    // Validate file size (25MB max)
+    const maxSize = 25 * 1024 * 1024;
+    if (file.size > maxSize) {
+      return NextResponse.json(
+        { success: false, error: "File too large. Maximum size is 25MB." },
+        { status: 400 }
+      );
     }
 
-    // File name = current date
-    const now = new Date();
-    const fileName = `${now.toISOString().replace(/[:.]/g, "-")}.webm`;
-    const filePath = path.join(uploadDir, fileName);
+    // Forward to Python API
+    const pythonFormData = new FormData();
+    pythonFormData.append("file", file);
 
-    // Convert to buffer and save
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    fs.writeFileSync(filePath, buffer);
+    const response = await fetch(PYTHON_API_URL, {
+      method: "POST",
+      body: pythonFormData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Python API error: ${response.status}`);
+    }
+
+    const transcriptionResult = await response.json();
 
     return NextResponse.json({
       success: true,
-      message: "File uploaded successfully",
-      fileName,
-      fileUrl: `/recordings/${fileName}`,
+      ...transcriptionResult,
+      message: "File transcribed successfully"
     });
+
   } catch (error) {
-    console.error("Upload error:", error);
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+    console.error("Upload/Transcription error:", error);
+    
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: error.message || "Transcription failed",
+        message: "Failed to process audio file"
+      },
+      { status: 500 }
+    );
   }
 }
