@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 const PYTHON_API_URL = "http://localhost:8502/transcribe";
-
+//const PYTHON_API_URL = "https://dev.paradigmuc.com/jobcan-api/transcribe"
 
 export async function POST(request) {
   try {
